@@ -2,22 +2,41 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { CarFront, Wrench, CalendarDays, Plus, ArrowRight } from '@lucide/svelte';
-  import { apiRequest, fmtDate, fmtMileage, type Vehicle, type Maintenance } from '../lib/api';
+  import { apiRequest, fmtDate, fmtMileage, dueLabel, reminderTiming, reminderStatusLabel, type Vehicle, type Maintenance, type Schedule } from '../lib/api';
   type Entry = Maintenance & { vehicle: Vehicle };
   let vehicles = $state<Vehicle[]>([]);
   let records = $state<Entry[]>([]);
+  let reminders = $state<Schedule[]>([]);
   let loading = $state(true);
   let error = $state('');
+  let upcomingItems = $derived(reminders.slice(0, 5).map((reminder) => ({
+    ...reminder,
+    vehicle: vehicles.find((vehicle) => vehicle.id === reminder.vehicle_id)
+  })));
+
+  function upcomingSummary(items: Schedule[]): string {
+    if (items.length === 0) return 'No services scheduled';
+    const overdue = items.filter((item) => item.status === 'overdue').length;
+    const soon = items.filter((item) => item.status === 'approaching').length;
+    const parts: string[] = [];
+    if (overdue > 0) parts.push(`${overdue} overdue`);
+    if (soon > 0) parts.push(`${soon} due soon`);
+    return parts.length > 0 ? parts.join(' · ') : 'None due soon';
+  }
 
   onMount(async () => {
     try {
       await apiRequest('/auth/me');
       vehicles = await apiRequest<Vehicle[]>('/vehicles');
-      const lists = await Promise.all(vehicles.map(async (vehicle) => {
-        const maintenance = await apiRequest<Maintenance[]>(`/vehicles/${vehicle.id}/maintenance`);
-        return maintenance.map((record) => ({ ...record, vehicle }));
-      }));
+      const [lists, upcoming] = await Promise.all([
+        Promise.all(vehicles.map(async (vehicle) => {
+          const maintenance = await apiRequest<Maintenance[]>(`/vehicles/${vehicle.id}/maintenance`);
+          return maintenance.map((record) => ({ ...record, vehicle }));
+        })),
+        apiRequest<Schedule[]>('/reminders')
+      ]);
       records = lists.flat().sort((a,b) => b.service_date.localeCompare(a.service_date));
+      reminders = upcoming;
     } catch (err) {
       if (err instanceof Error && /401|not authenticated|unauthorized/i.test(err.message)) await goto('/login', { replaceState: true });
       else error = err instanceof Error ? err.message : 'Could not load dashboard';
@@ -32,8 +51,13 @@
   <div class="stats">
     <div class="stat"><div class="stat-icon blue"><CarFront size={27}/></div><p>Total Vehicles</p><strong>{vehicles.length}</strong></div>
     <div class="stat"><div class="stat-icon green"><Wrench size={27}/></div><p>Maintenance Records</p><strong>{records.length}</strong></div>
-    <div class="stat"><div class="stat-icon orange"><CalendarDays size={27}/></div><p>Upcoming Services</p><strong>—</strong><small>Scheduling not yet implemented</small></div>
+    <a class="stat stat-link" href="/reminders"><div class="stat-icon orange"><CalendarDays size={27}/></div><p>Upcoming Services</p><strong>{reminders.length}</strong><small>{upcomingSummary(reminders)}</small></a>
   </div>
+  {#if reminders.length > 0}
+    <section class="panel upcoming"><div class="panel-head"><div><h2>Upcoming Services</h2><p>Due soon within 500 miles or 14 days</p></div><a href="/reminders">View All <ArrowRight size={17}/></a></div>
+      <div class="items">{#each upcomingItems as reminder (reminder.id)}<a class="item" href="/reminders"><div class="item-icon"><CalendarDays size={23}/></div><div><strong>{reminder.service_type}</strong><span>{reminder.vehicle ? `${reminder.vehicle.year} ${reminder.vehicle.make} ${reminder.vehicle.model}` : 'Vehicle'} · {dueLabel(reminder)} · {reminderTiming(reminder)}</span></div><span class="badge {reminder.status}">{reminderStatusLabel(reminder.status)}</span></a>{/each}</div>
+    </section>
+  {/if}
   <div class="sections">
     <section class="panel"><div class="panel-head"><div><h2>My Garage</h2><p>Your registered vehicles</p></div><a href="/vehicles">View All <ArrowRight size={17}/></a></div>
       {#if vehicles.length === 0}<div class="empty"><CarFront size={46} color="#3478f6"/><h3>No vehicles added yet</h3><p>Add your first vehicle to start tracking maintenance.</p><a href="/vehicles" class="primary">Add Your First Vehicle</a></div>
@@ -46,5 +70,5 @@
   </div>
 {/if}
 <style>
-  .loading{text-align:center;padding:80px;color:#8794a8;font-size:17px}.heading{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:30px}.eyebrow{font-size:13px;letter-spacing:1.5px;color:#3478f6;font-weight:800;margin-bottom:10px}h1{font-size:33px;margin-bottom:9px}.heading p,.panel-head p{color:#8794a8;font-size:16px}.primary{display:inline-flex;align-items:center;justify-content:center;gap:9px;background:#3478f6;color:white;padding:14px 20px;border-radius:11px;font-size:16px;font-weight:700}.primary:hover{background:#2563dc}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-bottom:28px}.stat,.panel{background:white;border:1px solid #e8edf5;border-radius:17px;padding:27px}.stat-icon{width:57px;height:57px;border-radius:14px;display:grid;place-items:center;color:#3478f6;margin-bottom:22px}.blue{background:#eaf1ff}.green{background:#e8f8ef;color:#16a34a}.orange{background:#fff4e5;color:#d97706}.stat p{font-size:16px;color:#8794a8;margin-bottom:8px}.stat strong{font-size:34px}.stat small{display:block;color:#8794a8;font-size:12px;margin-top:7px}.sections{display:grid;grid-template-columns:1fr 1fr;gap:24px}.panel{min-height:360px}.panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:22px}.panel-head h2{font-size:22px;margin-bottom:7px}.panel-head a{display:inline-flex;align-items:center;gap:5px;color:#3478f6;font-weight:700;font-size:14px;white-space:nowrap}.empty{text-align:center;padding:46px 10px 20px}.empty h3{font-size:20px;margin:17px 0 8px}.empty p{color:#8794a8;font-size:15px;line-height:1.6;margin-bottom:23px}.item{display:flex;align-items:center;gap:13px;padding:16px 0;border-top:1px solid #edf1f7}.item-icon{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;background:#eaf1ff;color:#3478f6;flex-shrink:0}.item>div:nth-child(2){flex:1;min-width:0}.item strong{display:block;font-size:16px;margin-bottom:5px}.item span{display:block;font-size:14px;color:#8794a8}.alert{color:#b91c1c;background:#fff1f2;border-radius:10px;padding:13px;margin-bottom:18px;font-size:15px}@media(max-width:1100px){.stats,.sections{grid-template-columns:1fr}}@media(max-width:650px){.heading{align-items:flex-start;flex-direction:column}}
+  .loading{text-align:center;padding:80px;color:#8794a8;font-size:17px}.heading{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:30px}.eyebrow{font-size:13px;letter-spacing:1.5px;color:#3478f6;font-weight:800;margin-bottom:10px}h1{font-size:33px;margin-bottom:9px}.heading p,.panel-head p{color:#8794a8;font-size:16px}.primary{display:inline-flex;align-items:center;justify-content:center;gap:9px;background:#3478f6;color:white;padding:14px 20px;border-radius:11px;font-size:16px;font-weight:700}.primary:hover{background:#2563dc}.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-bottom:28px}.stat,.panel{background:white;border:1px solid #e8edf5;border-radius:17px;padding:27px}.stat-icon{width:57px;height:57px;border-radius:14px;display:grid;place-items:center;color:#3478f6;margin-bottom:22px}.blue{background:#eaf1ff}.green{background:#e8f8ef;color:#16a34a}.orange{background:#fff4e5;color:#d97706}.stat p{font-size:16px;color:#8794a8;margin-bottom:8px}.stat strong{font-size:34px}.stat small{display:block;color:#8794a8;font-size:12px;margin-top:7px}.sections{display:grid;grid-template-columns:1fr 1fr;gap:24px}.panel{min-height:360px}.panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:22px}.panel-head h2{font-size:22px;margin-bottom:7px}.panel-head a{display:inline-flex;align-items:center;gap:5px;color:#3478f6;font-weight:700;font-size:14px;white-space:nowrap}.empty{text-align:center;padding:46px 10px 20px}.empty h3{font-size:20px;margin:17px 0 8px}.empty p{color:#8794a8;font-size:15px;line-height:1.6;margin-bottom:23px}.item{display:flex;align-items:center;gap:13px;padding:16px 0;border-top:1px solid #edf1f7}.item-icon{width:46px;height:46px;border-radius:12px;display:grid;place-items:center;background:#eaf1ff;color:#3478f6;flex-shrink:0}.item>div:nth-child(2){flex:1;min-width:0}.item strong{display:block;font-size:16px;margin-bottom:5px}.item span{display:block;font-size:14px;color:#8794a8}.alert{color:#b91c1c;background:#fff1f2;border-radius:10px;padding:13px;margin-bottom:18px;font-size:15px}.stat-link{display:block;color:inherit}.stat-link:hover{border-color:#3478f6}.upcoming{min-height:0;margin-bottom:28px}.badge{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap}.badge.overdue{background:#ffe4e6;color:#be123c}.badge.approaching{background:#fff4e5;color:#c2410c}.badge.upcoming{background:#eaf1ff;color:#3478f6}@media(max-width:1100px){.stats,.sections{grid-template-columns:1fr}}@media(max-width:650px){.heading{align-items:flex-start;flex-direction:column}}
 </style>
