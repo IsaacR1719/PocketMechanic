@@ -18,10 +18,10 @@ The project has two parts:
   - Mileage can go up but never down.
 - **Maintenance:** log service records for each vehicle (service type, date, mileage, cost, notes), and view the full history for a vehicle or across all of them.
 - **Expenses:** record expenses for each vehicle (amount, category, date, notes) and filter them by vehicle.
-- **Dashboard:** an overview of your garage and your most recent maintenance.
-- **Data isolation:** every vehicle, maintenance and expense endpoint only returns records that belong to the logged-in user.
-
-> **Planned:** the sidebar has a **Reminders** link, but that page has not been built yet.
+- **Dashboard:** an overview of your garage, recent maintenance, spending, and services that need attention.
+- **Schedules:** set a mileage interval, a time interval, or both for each service. The next due mileage and date are calculated from the last matching service.
+- **Reminders:** services that are overdue, or due within 500 miles or 30 days. The dashboard, the Reminders page (`/reminders`), and the bell popup all read `GET /reminders`.
+- **Data isolation:** every vehicle, maintenance, expense, schedule, and reminder endpoint only returns records that belong to the logged-in user.
 
 ---
 
@@ -48,20 +48,20 @@ PocketMechanic/
 │   ├── requirements.txt
 │   ├── app/
 │   │   ├── main.py         # FastAPI app, routers, CORS, health checks
-│   │   ├── api/            # Route handlers (auth, vehicles, maintenance, expenses)
+│   │   ├── api/            # Route handlers (auth, vehicles, maintenance, expenses, schedules, reminders)
 │   │   ├── services/       # Business logic and validation rules
 │   │   ├── models/         # SQLAlchemy ORM models
 │   │   ├── schemas/        # Pydantic request/response schemas
 │   │   └── db/database.py  # Engine, session factory, get_db dependency
-│   └── tests/
-│       └── test_expenses.py
+│   └── tests/              # unittest: expenses, schedules, dashboard, cost analysis, reminders
 └── frontend/
     ├── package.json
     ├── vite.config.ts
     └── src/
         ├── lib/api.ts      # Fetch wrapper, shared types, formatters
         └── routes/         # Pages: dashboard, login, register, account,
-                            #        vehicles, vehicles/[id], maintenance, expenses
+                            #        vehicles, vehicles/[id], maintenance,
+                            #        schedules, expenses, reminders
 ```
 
 ---
@@ -170,7 +170,7 @@ The backend tests use Python's built-in `unittest` with an in-memory SQLite data
 python -m unittest discover -s tests -v
 ```
 
-The tests currently cover the expense service: creating, reading, updating and deleting expenses, checking that users can only see their own vehicles' expenses, and rejecting invalid input.
+The tests cover expenses, schedules, the dashboard, cost analysis, and reminders. Reminder cases REM-01 through REM-14 are written up in `docs/test-plan.md`, in the same case-id style as the earlier AUTH, VEH, MAIN, EXP, and SYS cases.
 
 For type-checking the frontend:
 
